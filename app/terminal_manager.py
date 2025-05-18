@@ -5,6 +5,7 @@ import urllib.request
 import threading
 import sys
 import atexit
+import time
 
 
 class DownloadProgressTracker:
@@ -95,6 +96,16 @@ class TerminalManager:
         self.download_thread.daemon = True
         self.download_thread.start()
 
+    def _notify_download_complete(self):
+        """Safely notify that download is complete"""
+        self.is_downloading = False
+        if self.download_complete_callback:
+            try:
+                self.download_complete_callback()
+            except Exception as e:
+                if self.log_callback:
+                    self.log_callback(f"Error in download complete notification: {e}")
+
     def download_jar_file(self):
         """Download the JAR file from the URL with progress"""
         try:
@@ -115,21 +126,19 @@ class TerminalManager:
             if self.log_callback:
                 self.log_callback("Download completed successfully.")
 
-            self.is_downloading = False
+            # Small delay to ensure UI updates happen in the correct order
+            time.sleep(0.5)
 
-            # Notify that download is complete
-            if self.download_complete_callback:
-                self.download_complete_callback()
+            # Notify that download is complete using a safer method
+            self._notify_download_complete()
 
             return True
         except Exception as e:
             if self.log_callback:
                 self.log_callback(f"Error downloading JAR file: {e}")
-            self.is_downloading = False
 
-            # Still notify that download process is finished, even if with error
-            if self.download_complete_callback:
-                self.download_complete_callback()
+            # Notify that download process is finished, even if with error
+            self._notify_download_complete()
 
             return False
 
@@ -163,6 +172,13 @@ class TerminalManager:
             # Create the command
             cmd = ["java", "-jar", self.jar_file, username, password]
 
+            # Configure startup info to hide the console window on Windows
+            startup_info = None
+            if sys.platform.startswith("win"):
+                startup_info = subprocess.STARTUPINFO()
+                startup_info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startup_info.wShowWindow = 0  # SW_HIDE
+
             # Start process with piped stdout and stderr
             self.process = subprocess.Popen(
                 cmd,
@@ -171,6 +187,7 @@ class TerminalManager:
                 text=True,
                 bufsize=1,
                 universal_newlines=True,
+                startupinfo=startup_info,
             )
 
             self.running = True

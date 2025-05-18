@@ -2,6 +2,8 @@ import tkinter as tk
 from tkinter import ttk
 import pyperclip
 import os
+import threading
+import time
 from tkinter import messagebox
 
 
@@ -185,8 +187,26 @@ class MainWindow:
 
     def _download_complete(self):
         """Handle the download completion"""
-        self._update_ui_state_for_download(False)
-        self._append_log("ThetaTerminal.jar is now ready to use.")
+
+        # Use a separate thread to update UI state to avoid threading issues
+        def enable_ui():
+            time.sleep(0.5)  # Small delay to ensure all UI updates are processed
+            self._update_ui_state_for_download(False)
+            self._append_log("ThetaTerminal.jar is now ready to use.")
+
+            # Explicitly enable all input fields
+            self.root.after(100, self._force_enable_inputs)
+
+        threading.Thread(target=enable_ui, daemon=True).start()
+
+    def _force_enable_inputs(self):
+        """Force enable all input fields"""
+        self.username_entry.config(state=tk.NORMAL)
+        self.password_entry.config(state=tk.NORMAL)
+        self.show_password_btn.config(state=tk.NORMAL)
+        if not self.terminal_manager.is_running():
+            self.start_btn.config(state=tk.NORMAL)
+        self.root.update_idletasks()
 
     def _update_ui_state_for_download(self, is_downloading):
         """Update UI elements based on download state"""
@@ -202,6 +222,9 @@ class MainWindow:
             self.start_btn.config(state=tk.NORMAL)
         else:
             self.start_btn.config(state=tk.DISABLED)
+
+        # Force update
+        self.root.update_idletasks()
 
     def _update_progress(self, percentage, downloaded, total_size):
         """Update the progress bar and label"""
@@ -282,6 +305,9 @@ class MainWindow:
             self.username_entry.config(state=tk.NORMAL)
             self.password_entry.config(state=tk.NORMAL)
             self.show_password_btn.config(state=tk.NORMAL)
+
+        # Force update
+        self.root.update_idletasks()
 
     def _append_log(self, message):
         """Append a message to the log text area"""
