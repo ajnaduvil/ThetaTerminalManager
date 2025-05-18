@@ -36,6 +36,7 @@ class TerminalManager:
         self.download_progress_callback = None
         self.download_thread = None
         self.is_downloading = False
+        self.download_complete_callback = None
 
         # Load configuration if it exists
         self.load_config()
@@ -105,15 +106,31 @@ class TerminalManager:
                 self.download_url, self.jar_file, reporthook=progress_tracker
             )
 
+            # Ensure we send a final 100% progress update to hide the progress bar
+            if self.download_progress_callback and progress_tracker.total_size > 0:
+                self.download_progress_callback(
+                    100, progress_tracker.total_size, progress_tracker.total_size
+                )
+
             if self.log_callback:
                 self.log_callback("Download completed successfully.")
 
             self.is_downloading = False
+
+            # Notify that download is complete
+            if self.download_complete_callback:
+                self.download_complete_callback()
+
             return True
         except Exception as e:
             if self.log_callback:
                 self.log_callback(f"Error downloading JAR file: {e}")
             self.is_downloading = False
+
+            # Still notify that download process is finished, even if with error
+            if self.download_complete_callback:
+                self.download_complete_callback()
+
             return False
 
     def start_terminal(self, username, password):
@@ -199,6 +216,10 @@ class TerminalManager:
         """Check if the terminal is currently running"""
         return self.running
 
+    def get_downloading_status(self):
+        """Check if a download is in progress"""
+        return self.is_downloading
+
     def set_log_callback(self, callback):
         """Set callback function to receive log output"""
         self.log_callback = callback
@@ -206,6 +227,10 @@ class TerminalManager:
     def set_download_progress_callback(self, callback):
         """Set callback function to receive download progress updates"""
         self.download_progress_callback = callback
+
+    def set_download_complete_callback(self, callback):
+        """Set callback function to be called when download completes"""
+        self.download_complete_callback = callback
 
     def _read_output(self):
         """Read output from the process and send to callback"""

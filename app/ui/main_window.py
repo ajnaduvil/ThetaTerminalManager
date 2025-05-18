@@ -32,6 +32,7 @@ class MainWindow:
         # Set the callbacks
         self.terminal_manager.set_log_callback(self._append_log)
         self.terminal_manager.set_download_progress_callback(self._update_progress)
+        self.terminal_manager.set_download_complete_callback(self._download_complete)
 
         # Initialize UI state
         self._update_ui_state()
@@ -49,9 +50,10 @@ class MainWindow:
             row=0, column=0, sticky=tk.W, padx=(0, 5)
         )
         self.username_var = tk.StringVar(value=self.terminal_manager.username)
-        ttk.Entry(cred_frame, textvariable=self.username_var, width=20).grid(
-            row=0, column=1, sticky=tk.W, padx=(0, 10)
+        self.username_entry = ttk.Entry(
+            cred_frame, textvariable=self.username_var, width=20
         )
+        self.username_entry.grid(row=0, column=1, sticky=tk.W, padx=(0, 10))
 
         # Password
         ttk.Label(cred_frame, text="Password:").grid(
@@ -171,6 +173,7 @@ class MainWindow:
             )
             if reply:
                 self._append_log("Starting download...")
+                self._update_ui_state_for_download(True)
                 self.terminal_manager._download_jar_file_async()
                 self.progress_frame.pack(
                     fill=tk.X, pady=(0, 10), after=self.control_frame
@@ -180,13 +183,36 @@ class MainWindow:
                     "Download cancelled. You'll need the JAR file to start the terminal."
                 )
 
+    def _download_complete(self):
+        """Handle the download completion"""
+        self._update_ui_state_for_download(False)
+        self._append_log("ThetaTerminal.jar is now ready to use.")
+
+    def _update_ui_state_for_download(self, is_downloading):
+        """Update UI elements based on download state"""
+        state = tk.DISABLED if is_downloading else tk.NORMAL
+
+        # Update the input fields and buttons
+        self.username_entry.config(state=state)
+        self.password_entry.config(state=state)
+        self.show_password_btn.config(state=state)
+
+        # Only enable start button if not downloading and not running
+        if not is_downloading and not self.terminal_manager.is_running():
+            self.start_btn.config(state=tk.NORMAL)
+        else:
+            self.start_btn.config(state=tk.DISABLED)
+
     def _update_progress(self, percentage, downloaded, total_size):
         """Update the progress bar and label"""
-        if percentage == 100 and self.progress_frame.winfo_ismapped():
-            self.progress_frame.pack_forget()
-            self._append_log("Download complete.")
+        # Handle download completion
+        if percentage >= 100:
+            if self.progress_frame.winfo_ismapped():
+                self.progress_frame.pack_forget()
+                self._append_log("Download complete.")
             return
 
+        # Show progress frame if not visible
         if not self.progress_frame.winfo_ismapped():
             self.progress_frame.pack(fill=tk.X, pady=(0, 10), after=self.control_frame)
 
@@ -205,6 +231,9 @@ class MainWindow:
         # Update the progress bar
         self.progress_bar["value"] = percentage
 
+        # Ensure the update is displayed immediately
+        self.root.update_idletasks()
+
     def _start_terminal(self):
         """Start the terminal with the given credentials"""
         username = self.username_var.get()
@@ -217,6 +246,8 @@ class MainWindow:
         success = self.terminal_manager.start_terminal(username, password)
         if success:
             self._update_ui_state()
+        elif self.terminal_manager.get_downloading_status():
+            self._update_ui_state_for_download(True)
 
     def _stop_terminal(self):
         """Stop the terminal if it's running"""
@@ -227,14 +258,30 @@ class MainWindow:
     def _update_ui_state(self):
         """Update UI elements based on the terminal state"""
         running = self.terminal_manager.is_running()
+        downloading = self.terminal_manager.get_downloading_status()
+
+        # If downloading, use download-specific UI state
+        if downloading:
+            self._update_ui_state_for_download(True)
+            return
 
         # Update button states
         if running:
             self.start_btn.config(state=tk.DISABLED)
             self.stop_btn.config(state=tk.NORMAL)
+
+            # Disable input fields while running
+            self.username_entry.config(state=tk.DISABLED)
+            self.password_entry.config(state=tk.DISABLED)
+            self.show_password_btn.config(state=tk.DISABLED)
         else:
             self.start_btn.config(state=tk.NORMAL)
             self.stop_btn.config(state=tk.DISABLED)
+
+            # Enable input fields when not running
+            self.username_entry.config(state=tk.NORMAL)
+            self.password_entry.config(state=tk.NORMAL)
+            self.show_password_btn.config(state=tk.NORMAL)
 
     def _append_log(self, message):
         """Append a message to the log text area"""
