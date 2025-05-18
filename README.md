@@ -35,11 +35,43 @@ python main.py
 3. The log area will display output from the terminal
 4. Click "Stop" to terminate the terminal when done
 
+## Building Executable
+
+To build a standalone executable:
+
+### Using the build script (recommended)
+
+1. Install the requirements:
+   ```
+   pip install -r requirements.txt
+   ```
+
+2. On Windows, run:
+   ```
+   build.bat
+   ```
+   
+   Or run the Python build script directly:
+   ```
+   python build.py
+   ```
+
+3. The executable will be created in the `dist` directory
+
+### Using PyInstaller directly
+
+You can also build with PyInstaller directly using the spec file:
+
+```
+pyinstaller ThetaTerminalManager.spec
+```
+
 ## Structure
 
 - `main.py` - Entry point for the application
 - `app/terminal_manager.py` - Core logic for managing the terminal
 - `app/ui/main_window.py` - User interface implementation
+- `build.py` - Build script for creating the executable
 
 ## License
 

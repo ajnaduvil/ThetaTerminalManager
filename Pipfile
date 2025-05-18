@@ -5,6 +5,7 @@ name = "pypi"
 
 [packages]
 pyperclip = "*"
+pyinstaller = "*"
 
 [dev-packages]
 
