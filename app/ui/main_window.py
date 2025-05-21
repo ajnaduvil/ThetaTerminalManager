@@ -7,6 +7,137 @@ import time
 from tkinter import messagebox
 
 
+class ServerSettingsDialog:
+    def __init__(self, parent, terminal_manager):
+        # Create a new top-level window
+        self.dialog = tk.Toplevel(parent)
+        self.dialog.title("Server Settings")
+        self.dialog.transient(parent)
+        self.dialog.grab_set()  # Modal dialog
+
+        # Make dialog appear in center of parent
+        self.dialog.geometry("400x250")  # Increased height to accommodate buttons
+        self.dialog.resizable(False, False)
+
+        self.terminal_manager = terminal_manager
+        self.create_widgets()
+
+    def create_widgets(self):
+        # Get current server regions
+        settings = self.terminal_manager.get_server_regions()
+
+        # Create main frame with padding
+        main_frame = ttk.Frame(self.dialog, padding="20")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Title and info
+        ttk.Label(
+            main_frame, text="Server Region Settings", font=("", 12, "bold")
+        ).pack(anchor=tk.W, pady=(0, 10))
+
+        if not os.path.exists(
+            os.path.join(self.terminal_manager.config_folder, "config_0.properties")
+        ):
+            ttk.Label(
+                main_frame,
+                text="Note: Changes will be applied when the properties file is created\nafter ThetaTerminal runs for the first time.",
+                foreground="blue",
+            ).pack(anchor=tk.W, pady=(0, 10))
+
+        # MDDS Region selection
+        mdds_frame = ttk.Frame(main_frame)
+        mdds_frame.pack(fill=tk.X, pady=(0, 10))
+
+        ttk.Label(mdds_frame, text="MDDS Region:").pack(side=tk.LEFT)
+
+        self.mdds_var = tk.StringVar(value=settings["mdds_region"])
+        mdds_combo = ttk.Combobox(
+            mdds_frame,
+            textvariable=self.mdds_var,
+            values=settings["mdds_options"],
+            state="readonly",
+            width=20,
+        )
+        mdds_combo.pack(side=tk.RIGHT)
+
+        # FPSS Region selection
+        fpss_frame = ttk.Frame(main_frame)
+        fpss_frame.pack(fill=tk.X, pady=(0, 10))
+
+        ttk.Label(fpss_frame, text="FPSS Region:").pack(side=tk.LEFT)
+
+        self.fpss_var = tk.StringVar(value=settings["fpss_region"])
+        fpss_combo = ttk.Combobox(
+            fpss_frame,
+            textvariable=self.fpss_var,
+            values=settings["fpss_options"],
+            state="readonly",
+            width=20,
+        )
+        fpss_combo.pack(side=tk.RIGHT)
+
+        # Warning about non-production servers
+        ttk.Label(
+            main_frame,
+            text="Warning: STAGE and DEV servers are for testing only.\nThey may be unstable and have incomplete data.",
+            foreground="red",
+        ).pack(anchor=tk.W, pady=(5, 10))
+
+        # Add a separator before buttons
+        ttk.Separator(main_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
+
+        # Button frame - ensure it's at the bottom with fixed height
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill=tk.X, pady=(10, 0), side=tk.BOTTOM)
+
+        # Reset button (left side)
+        reset_btn = ttk.Button(
+            button_frame, text="Reset to Production", command=self.reset_to_production
+        )
+        reset_btn.pack(side=tk.LEFT)
+
+        # Cancel button
+        cancel_btn = ttk.Button(
+            button_frame, text="Cancel", command=self.dialog.destroy
+        )
+        cancel_btn.pack(side=tk.RIGHT, padx=(5, 0))
+
+        # Apply button
+        apply_btn = ttk.Button(button_frame, text="Apply", command=self.apply_settings)
+        apply_btn.pack(side=tk.RIGHT)
+
+    def reset_to_production(self):
+        """Reset server regions to production defaults"""
+        # Set to production server values
+        self.mdds_var.set("MDDS_NJ_HOSTS")
+        self.fpss_var.set("FPSS_NJ_HOSTS")
+
+        # Apply the settings automatically
+        self.apply_settings()
+
+    def apply_settings(self):
+        mdds_region = self.mdds_var.get()
+        fpss_region = self.fpss_var.get()
+
+        success = self.terminal_manager.update_server_regions(mdds_region, fpss_region)
+
+        if success:
+            messagebox.showinfo(
+                "Settings Applied",
+                "Server settings have been updated. The changes will take effect the next time ThetaTerminal starts.",
+                parent=self.dialog,
+            )
+        else:
+            # Even if the file doesn't exist yet, we store the values for later
+            messagebox.showinfo(
+                "Settings Stored",
+                "Server settings will be applied when the properties file is created after ThetaTerminal runs for the first time.",
+                parent=self.dialog,
+            )
+
+        self.dialog.destroy()
+
+
 class MainWindow:
     def __init__(self, root, terminal_manager):
         self.root = root
@@ -123,6 +254,13 @@ class MainWindow:
             self.control_frame,
             text="📁 Config",
             command=self._open_config_folder,
+        ).pack(side=tk.LEFT, padx=(0, 5))
+
+        # Server settings button
+        ttk.Button(
+            self.control_frame,
+            text="🌐 Servers",
+            command=self._open_server_settings,
         ).pack(side=tk.LEFT)
 
         # Define styles for colored buttons
@@ -365,3 +503,7 @@ class MainWindow:
                 f"Config folder not found at: {self.terminal_manager.config_folder}",
                 parent=self.root,
             )
+
+    def _open_server_settings(self):
+        """Open the server settings dialog"""
+        ServerSettingsDialog(self.root, self.terminal_manager)

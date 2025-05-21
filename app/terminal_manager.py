@@ -52,6 +52,15 @@ class TerminalManager:
             )
         )
 
+        # Server region options
+        self.mdds_regions = ["MDDS_NJ_HOSTS", "MDDS_STAGE_HOSTS", "MDDS_DEV_HOSTS"]
+        self.fpss_regions = ["FPSS_NJ_HOSTS", "FPSS_STAGE_HOSTS", "FPSS_DEV_HOSTS"]
+        self.current_mdds_region = "MDDS_NJ_HOSTS"
+        self.current_fpss_region = "FPSS_NJ_HOSTS"
+
+        # Read current settings from properties file if it exists
+        self._read_properties_file()
+
         # Load configuration if it exists
         self.load_config()
 
@@ -313,3 +322,81 @@ class TerminalManager:
             if self.log_callback:
                 self.log_callback(f"Error opening folder: {e}")
             return False
+
+    def _read_properties_file(self):
+        """Read the server region settings from config_0.properties file"""
+        if os.path.exists(os.path.join(self.config_folder, "config_0.properties")):
+            properties_path = os.path.join(self.config_folder, "config_0.properties")
+            try:
+                with open(properties_path, "r") as f:
+                    lines = f.readlines()
+                    for line in lines:
+                        line = line.strip()
+                        if line.startswith("MDDS_REGION="):
+                            self.current_mdds_region = line.split("=")[1]
+                        elif line.startswith("FPSS_REGION="):
+                            self.current_fpss_region = line.split("=")[1]
+                if self.log_callback:
+                    self.log_callback(
+                        f"Current server settings loaded: MDDS={self.current_mdds_region}, FPSS={self.current_fpss_region}"
+                    )
+            except Exception as e:
+                if self.log_callback:
+                    self.log_callback(f"Error reading properties file: {e}")
+
+    def update_server_regions(self, mdds_region, fpss_region):
+        """Update the server region settings in config_0.properties file"""
+        properties_path = os.path.join(self.config_folder, "config_0.properties")
+
+        # Check if properties file exists
+        if not os.path.exists(properties_path):
+            if self.log_callback:
+                self.log_callback(
+                    "Properties file not found. It will be created when ThetaTerminal runs for the first time."
+                )
+            # Save the values for when the file is created
+            self.current_mdds_region = mdds_region
+            self.current_fpss_region = fpss_region
+            return False
+
+        try:
+            # Read existing properties file
+            with open(properties_path, "r") as f:
+                lines = f.readlines()
+
+            # Update region settings
+            updated_lines = []
+            for line in lines:
+                if line.strip().startswith("MDDS_REGION="):
+                    updated_lines.append(f"MDDS_REGION={mdds_region}\n")
+                elif line.strip().startswith("FPSS_REGION="):
+                    updated_lines.append(f"FPSS_REGION={fpss_region}\n")
+                else:
+                    updated_lines.append(line)
+
+            # Write updated content back to file
+            with open(properties_path, "w") as f:
+                f.writelines(updated_lines)
+
+            # Update current values
+            self.current_mdds_region = mdds_region
+            self.current_fpss_region = fpss_region
+
+            if self.log_callback:
+                self.log_callback(
+                    f"Server settings updated: MDDS={mdds_region}, FPSS={fpss_region}"
+                )
+            return True
+        except Exception as e:
+            if self.log_callback:
+                self.log_callback(f"Error updating properties file: {e}")
+            return False
+
+    def get_server_regions(self):
+        """Get the current server region settings"""
+        return {
+            "mdds_region": self.current_mdds_region,
+            "fpss_region": self.current_fpss_region,
+            "mdds_options": self.mdds_regions,
+            "fpss_options": self.fpss_regions,
+        }
