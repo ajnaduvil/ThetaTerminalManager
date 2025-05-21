@@ -20,6 +20,12 @@ class ServerSettingsDialog:
         self.dialog.resizable(False, False)
 
         self.terminal_manager = terminal_manager
+
+        # Check if config file exists
+        self.config_exists = os.path.exists(
+            os.path.join(self.terminal_manager.config_folder, "config_0.properties")
+        )
+
         self.create_widgets()
 
     def create_widgets(self):
@@ -35,13 +41,11 @@ class ServerSettingsDialog:
             main_frame, text="Server Region Settings", font=("", 12, "bold")
         ).pack(anchor=tk.W, pady=(0, 10))
 
-        if not os.path.exists(
-            os.path.join(self.terminal_manager.config_folder, "config_0.properties")
-        ):
+        if not self.config_exists:
             ttk.Label(
                 main_frame,
-                text="Note: Changes will be applied when the properties file is created\nafter ThetaTerminal runs for the first time.",
-                foreground="blue",
+                text="Configuration file not found. Settings cannot be changed.\nRun ThetaTerminal first to create the configuration file.",
+                foreground="red",
             ).pack(anchor=tk.W, pady=(0, 10))
 
         # MDDS Region selection
@@ -55,7 +59,7 @@ class ServerSettingsDialog:
             mdds_frame,
             textvariable=self.mdds_var,
             values=settings["mdds_options"],
-            state="readonly",
+            state="readonly" if self.config_exists else "disabled",
             width=20,
         )
         mdds_combo.pack(side=tk.RIGHT)
@@ -71,7 +75,7 @@ class ServerSettingsDialog:
             fpss_frame,
             textvariable=self.fpss_var,
             values=settings["fpss_options"],
-            state="readonly",
+            state="readonly" if self.config_exists else "disabled",
             width=20,
         )
         fpss_combo.pack(side=tk.RIGHT)
@@ -92,18 +96,24 @@ class ServerSettingsDialog:
 
         # Reset button (left side)
         reset_btn = ttk.Button(
-            button_frame, text="Reset to Production", command=self.reset_to_production
+            button_frame,
+            text="Reset to Production",
+            command=self.reset_to_production,
+            state=tk.NORMAL if self.config_exists else tk.DISABLED,
         )
         reset_btn.pack(side=tk.LEFT)
 
         # Cancel button
-        cancel_btn = ttk.Button(
-            button_frame, text="Cancel", command=self.dialog.destroy
-        )
+        cancel_btn = ttk.Button(button_frame, text="Close", command=self.dialog.destroy)
         cancel_btn.pack(side=tk.RIGHT, padx=(5, 0))
 
         # Apply button
-        apply_btn = ttk.Button(button_frame, text="Apply", command=self.apply_settings)
+        apply_btn = ttk.Button(
+            button_frame,
+            text="Apply",
+            command=self.apply_settings,
+            state=tk.NORMAL if self.config_exists else tk.DISABLED,
+        )
         apply_btn.pack(side=tk.RIGHT)
 
     def reset_to_production(self):
@@ -116,6 +126,14 @@ class ServerSettingsDialog:
         self.apply_settings()
 
     def apply_settings(self):
+        if not self.config_exists:
+            messagebox.showinfo(
+                "Configuration Missing",
+                "Cannot apply settings. Run ThetaTerminal first to create the configuration file.",
+                parent=self.dialog,
+            )
+            return
+
         mdds_region = self.mdds_var.get()
         fpss_region = self.fpss_var.get()
 
@@ -127,15 +145,13 @@ class ServerSettingsDialog:
                 "Server settings have been updated. The changes will take effect the next time ThetaTerminal starts.",
                 parent=self.dialog,
             )
+            self.dialog.destroy()
         else:
-            # Even if the file doesn't exist yet, we store the values for later
-            messagebox.showinfo(
-                "Settings Stored",
-                "Server settings will be applied when the properties file is created after ThetaTerminal runs for the first time.",
+            messagebox.showerror(
+                "Error",
+                "Failed to update server settings. Please try again.",
                 parent=self.dialog,
             )
-
-        self.dialog.destroy()
 
 
 class MainWindow:
