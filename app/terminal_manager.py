@@ -39,6 +39,19 @@ class TerminalManager:
         self.is_downloading = False
         self.download_complete_callback = None
 
+        # Paths for logs and config folders
+        self.logs_folder = os.path.join(
+            os.path.expanduser("~"), "ThetaData", "ThetaTerminal", "logs"
+        )
+        self.config_folder = os.path.dirname(
+            os.path.join(
+                os.path.expanduser("~"),
+                "ThetaData",
+                "ThetaTerminal",
+                "config_0.properties",
+            )
+        )
+
         # Load configuration if it exists
         self.load_config()
 
@@ -261,3 +274,42 @@ class TerminalManager:
         finally:
             if self.process.poll() is not None:
                 self.running = False
+
+    def open_logs_folder(self):
+        """Open the logs folder in file explorer"""
+        if os.path.exists(self.logs_folder):
+            self._open_folder(self.logs_folder)
+            if self.log_callback:
+                self.log_callback(f"Opening logs folder: {self.logs_folder}")
+            return True
+        else:
+            if self.log_callback:
+                self.log_callback(f"Logs folder not found: {self.logs_folder}")
+            return False
+
+    def open_config_folder(self):
+        """Open the config folder in file explorer"""
+        if os.path.exists(self.config_folder):
+            self._open_folder(self.config_folder)
+            if self.log_callback:
+                self.log_callback(f"Opening config folder: {self.config_folder}")
+            return True
+        else:
+            if self.log_callback:
+                self.log_callback(f"Config folder not found: {self.config_folder}")
+            return False
+
+    def _open_folder(self, folder_path):
+        """Open a folder in the default file explorer"""
+        try:
+            if sys.platform.startswith("win"):
+                os.startfile(folder_path)
+            elif sys.platform.startswith("darwin"):  # macOS
+                subprocess.call(["open", folder_path])
+            else:  # Linux
+                subprocess.call(["xdg-open", folder_path])
+            return True
+        except Exception as e:
+            if self.log_callback:
+                self.log_callback(f"Error opening folder: {e}")
+            return False

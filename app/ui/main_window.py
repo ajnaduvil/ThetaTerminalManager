@@ -107,6 +107,24 @@ class MainWindow:
         )
         self.stop_btn.pack(side=tk.LEFT)
 
+        # Create a separator
+        ttk.Separator(self.control_frame, orient=tk.VERTICAL).pack(
+            side=tk.LEFT, padx=10, fill=tk.Y
+        )
+
+        # Folder access buttons
+        ttk.Button(
+            self.control_frame,
+            text="📁 Logs",
+            command=self._open_logs_folder,
+        ).pack(side=tk.LEFT, padx=(0, 5))
+
+        ttk.Button(
+            self.control_frame,
+            text="📁 Config",
+            command=self._open_config_folder,
+        ).pack(side=tk.LEFT)
+
         # Define styles for colored buttons
         self.root.tk_setPalette(background="#f0f0f0")
 
@@ -327,3 +345,23 @@ class MainWindow:
         log_content = self.log_text.get(1.0, tk.END)
         pyperclip.copy(log_content)
         self._append_log("Log copied to clipboard")
+
+    def _open_logs_folder(self):
+        """Open the logs folder in file explorer"""
+        success = self.terminal_manager.open_logs_folder()
+        if not success:
+            messagebox.showerror(
+                "Folder Not Found",
+                f"Logs folder not found at: {self.terminal_manager.logs_folder}",
+                parent=self.root,
+            )
+
+    def _open_config_folder(self):
+        """Open the config folder in file explorer"""
+        success = self.terminal_manager.open_config_folder()
+        if not success:
+            messagebox.showerror(
+                "Folder Not Found",
+                f"Config folder not found at: {self.terminal_manager.config_folder}",
+                parent=self.root,
+            )
