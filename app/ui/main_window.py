@@ -5,6 +5,7 @@ import os
 import threading
 import time
 from tkinter import messagebox
+from . import set_window_icon
 
 
 class ServerSettingsDialog:
@@ -14,6 +15,9 @@ class ServerSettingsDialog:
         self.dialog.title("Server Settings")
         self.dialog.transient(parent)
         self.dialog.grab_set()  # Modal dialog
+
+        # Set the icon for the dialog
+        set_window_icon(self.dialog)
 
         # Make dialog appear in center of parent
         self.dialog.geometry("400x250")  # Increased height to accommodate buttons
