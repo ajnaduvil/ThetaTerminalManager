@@ -1,4 +1,4 @@
-# Theta Terminal Manager
+# ThetaData Terminal Manager
 
 A Python application for managing ThetaTerminal.jar with a simple GUI interface.
 
@@ -106,7 +106,7 @@ To build a standalone executable:
 You can also build with PyInstaller directly:
 
 ```
-uv run pyinstaller --name=ThetaTerminalManager --onefile --windowed main.py
+uv run pyinstaller --name=ThetaDataTerminalManager --onefile --windowed main.py
 ```
 
 ## Structure

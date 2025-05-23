@@ -1,4 +1,4 @@
-# ThetaTerminalManager UI package
+# ThetaDataTerminalManager UI package
 
 import os
 import sys

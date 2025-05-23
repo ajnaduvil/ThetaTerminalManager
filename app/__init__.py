@@ -1,1 +1,1 @@
-# ThetaTerminalManager app package
+# ThetaDataTerminalManager app package

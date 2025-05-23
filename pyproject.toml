@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "theta-terminal-manager"
+name = "thetadata-terminal-manager"
 version = "1.0.0"
 description = "A Python application for managing ThetaTerminal.jar with a simple GUI interface"
 readme = "README.md"
@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
-theta-terminal-manager = "main:main"
+thetadata-terminal-manager = "main:main"
 
 [tool.uv]
 dev-dependencies = []

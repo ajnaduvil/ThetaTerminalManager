@@ -10,7 +10,7 @@ from app.ui import set_window_icon
 
 def main():
     root = tk.Tk()
-    root.title("Theta Terminal Manager")
+    root.title("ThetaData Terminal Manager")
 
     # Set the window icon
     if set_window_icon(root):
@@ -34,7 +34,7 @@ def main():
             ):
                 # Disable window interactions and show status
                 root.config(cursor="wait")
-                root.title("Theta Terminal Manager - Stopping...")
+                root.title("ThetaData Terminal Manager - Stopping...")
 
                 # Update UI immediately
                 root.update_idletasks()

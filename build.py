@@ -7,7 +7,7 @@ import platform
 
 def build_executable():
     """Build the executable using PyInstaller"""
-    print("Building Theta Terminal Manager executable...")
+    print("Building ThetaData Terminal Manager executable...")
 
     # Clean up previous build artifacts if they exist
     if os.path.exists("dist"):
@@ -58,7 +58,7 @@ def build_executable():
         "uv",
         "run",
         "pyinstaller",
-        "--name=ThetaTerminalManager",
+        "--name=ThetaDataTerminalManager",
         "--onefile",
         "--windowed",
         f"--add-data=README.md{separator}.",
@@ -97,9 +97,9 @@ def build_executable():
         else:
             # Try with spec file if direct command fails
             print("Attempting to build with spec file...")
-            if os.path.exists("ThetaTerminalManager.spec"):
+            if os.path.exists("ThetaDataTerminalManager.spec"):
                 spec_result = subprocess.run(
-                    ["uv", "run", "pyinstaller", "ThetaTerminalManager.spec"],
+                    ["uv", "run", "pyinstaller", "ThetaDataTerminalManager.spec"],
                     capture_output=True,
                     text=True,
                 )
@@ -114,7 +114,8 @@ def build_executable():
 
     # Check if executable was created
     exe_path = os.path.join(
-        "dist", "ThetaTerminalManager.exe" if is_windows else "ThetaTerminalManager"
+        "dist",
+        "ThetaDataTerminalManager.exe" if is_windows else "ThetaDataTerminalManager",
     )
     if os.path.exists(exe_path):
         print("Build completed successfully!")

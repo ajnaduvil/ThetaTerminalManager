@@ -22,4 +22,5 @@ echo If the icon still doesn't appear, try:
 echo 1. Right-click the executable and check Properties
 echo 2. Rebuild the executable: build.bat
 echo 3. Check that icon.ico is a valid Windows icon file
+echo 4. The executable is now named: ThetaDataTerminalManager.exe
 pause 

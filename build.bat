@@ -1,5 +1,5 @@
 @echo off
-echo Building Theta Terminal Manager...
+echo Building ThetaData Terminal Manager...
 
 REM Clear any existing virtual environment variables to avoid conflicts
 set VIRTUAL_ENV=
