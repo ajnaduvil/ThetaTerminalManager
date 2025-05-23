@@ -38,6 +38,10 @@ class TerminalManager:
         self.download_thread = None
         self.is_downloading = False
         self.download_complete_callback = None
+        self.start_after_download = False  # Flag to auto-start after download
+        self.auto_start_complete_callback = (
+            None  # Callback for when auto-start completes
+        )
 
         # Paths for logs and config folders
         self.logs_folder = os.path.join(
@@ -75,15 +79,15 @@ class TerminalManager:
             self.log_callback = None
 
             if self.running:
-                # Perform the actual cleanup with a simple direct approach to avoid hanging
+                # Perform immediate cleanup to avoid hanging
                 if self.process:
                     try:
-                        # Quick force kill rather than graceful termination
+                        # Force kill the process immediately during cleanup
                         self.process.kill()
                     except Exception:
                         pass
 
-                    # Close pipes regardless of termination success
+                    # Close pipes immediately
                     try:
                         if hasattr(self.process, "stdout") and self.process.stdout:
                             self.process.stdout.close()
@@ -98,43 +102,25 @@ class TerminalManager:
 
                 self.running = False
 
-            # Run cleanup in a separate thread with timeout to prevent hanging the application exit
-            cleanup_thread = threading.Thread(target=self._final_cleanup)
-            cleanup_thread.daemon = True
-            cleanup_thread.start()
-
-            # Only wait a very short time for cleanup to avoid blocking application exit
-            cleanup_thread.join(timeout=0.1)  # Reduced from 0.2 to 0.1 seconds
+            # Aggressive cleanup on Windows
+            if sys.platform.startswith("win"):
+                try:
+                    jar_name = os.path.basename(self.jar_file)
+                    subprocess.run(
+                        f'taskkill /F /IM java.exe /FI "COMMANDLINE eq *{jar_name}*"',
+                        shell=True,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        timeout=0.5,
+                    )
+                except Exception:
+                    pass
 
             # Restore the callback
             self.log_callback = temp_callback
 
         except Exception:
             # Ensure we don't propagate exceptions during cleanup
-            pass
-
-    def _final_cleanup(self):
-        """Final cleanup operations run in a separate thread"""
-        try:
-            # Check for any lingering Java processes
-            self._cleanup_java_processes()
-
-            # Force terminate any JVM instances
-            if sys.platform.startswith("win"):
-                try:
-                    # Force terminate any Java processes that might be running with our JAR file
-                    jar_name = os.path.basename(self.jar_file)
-                    subprocess.run(
-                        f'taskkill /F /IM java.exe /FI "WINDOWTITLE eq *{jar_name}*"',
-                        shell=True,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        timeout=1,
-                    )
-                except Exception:
-                    pass
-        except Exception:
-            # Ignore any errors in final cleanup
             pass
 
     def load_config(self):
@@ -193,6 +179,35 @@ class TerminalManager:
                 if self.log_callback:
                     self.log_callback(f"Error in download complete notification: {e}")
 
+        # Check if we should auto-start the terminal after download
+        if self.start_after_download:
+            self.start_after_download = False  # Reset the flag
+            # Small delay to ensure UI updates are complete
+            import threading
+
+            def delayed_start():
+                time.sleep(1.0)  # Give UI time to update
+                if self.log_callback:
+                    self.log_callback("Auto-starting terminal after download...")
+                success = self.start_terminal(self.username, self.password)
+                if not success and self.log_callback:
+                    self.log_callback(
+                        "Failed to auto-start terminal. Please try clicking Start again."
+                    )
+
+                # Notify UI that auto-start has completed (success or failure)
+                if self.auto_start_complete_callback:
+                    try:
+                        self.auto_start_complete_callback(success)
+                    except Exception as e:
+                        if self.log_callback:
+                            self.log_callback(
+                                f"Error in auto-start complete notification: {e}"
+                            )
+
+            start_thread = threading.Thread(target=delayed_start, daemon=True)
+            start_thread.start()
+
     def download_jar_file(self):
         """Download the JAR file from the URL with progress"""
         try:
@@ -243,6 +258,7 @@ class TerminalManager:
         if not os.path.exists(self.jar_file):
             if self.log_callback:
                 self.log_callback("ThetaTerminal.jar not found. Starting download...")
+            self.start_after_download = True  # Set flag to auto-start after download
             self._download_jar_file_async()
             return False
 
@@ -256,25 +272,34 @@ class TerminalManager:
 
         # Start the process
         try:
-            # Create the command
+            # Create the command - use minimal flags to allow proper signal handling
             cmd = ["java", "-jar", self.jar_file, username, password]
 
-            # Configure startup info to hide the console window on Windows
+            # Configure startup info - allow console for proper signal handling
             startup_info = None
+            creation_flags = 0
             if sys.platform.startswith("win"):
                 startup_info = subprocess.STARTUPINFO()
-                startup_info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                startup_info.wShowWindow = 0  # SW_HIDE
+                # Use CREATE_NO_WINDOW to hide console but preserve signal handling
+                creation_flags = subprocess.CREATE_NO_WINDOW
+            else:
+                # On Unix, start new process group for proper signal handling
+                creation_flags = 0
 
-            # Start process with piped stdout and stderr
+            # Start process with stdin, stdout and stderr pipes for communication
             self.process = subprocess.Popen(
                 cmd,
+                stdin=subprocess.PIPE,  # Enable stdin for sending quit commands
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
                 bufsize=1,
                 universal_newlines=True,
                 startupinfo=startup_info,
+                # Use proper creation flags for signal handling
+                creationflags=creation_flags,
+                # On Unix, start new process group
+                preexec_fn=os.setsid if not sys.platform.startswith("win") else None,
             )
 
             self.running = True
@@ -285,7 +310,7 @@ class TerminalManager:
             self.output_thread.start()
 
             if self.log_callback:
-                self.log_callback("Terminal started.")
+                self.log_callback("Terminal started with graceful shutdown support.")
 
             return True
         except Exception as e:
@@ -296,231 +321,188 @@ class TerminalManager:
     def stop_terminal(self):
         """Stop the terminal process if it's running"""
         if not self.running:
+            if self.log_callback:
+                self.log_callback("Stop called but terminal not running.")
             return False
 
+        if self.log_callback:
+            self.log_callback("Beginning graceful terminal shutdown...")
+
+        # Set up a hard timeout for the entire operation
+        start_time = time.time()
+        timeout_seconds = 10.0  # Increased timeout to allow graceful shutdown
+
         try:
-            # Set a flag to track successful termination
-            termination_successful = False
+            # Don't mark as not running yet - let graceful shutdown complete first
 
             # Terminate the process
             if self.process:
-                # Store the process ID before termination
                 pid = self.process.pid
+                if self.log_callback:
+                    self.log_callback(f"Attempting graceful shutdown of PID: {pid}")
 
-                # First attempt a graceful termination
-                try:
-                    self.process.terminate()
-
-                    # Wait for process to terminate with a shorter timeout for better responsiveness
-                    self.process.wait(timeout=2)  # Reduced from 3 to 2 seconds
-                    termination_successful = True
-                except (subprocess.TimeoutExpired, Exception) as e:
-                    # If process doesn't terminate in time or there's an error, force kill it
-                    if self.log_callback is not None:
-                        self.log_callback(
-                            "Process not responding - forcing termination..."
-                        )
-
+                # Step 1: Try sending quit commands via stdin (most graceful)
+                if hasattr(self.process, "stdin") and self.process.stdin:
                     try:
-                        self.process.kill()
-                        # Wait again to ensure it's terminated with a shorter timeout
-                        self.process.wait(timeout=0.5)  # Reduced from 1 to 0.5 seconds
-                        termination_successful = True
-                    except Exception:
-                        # If kill also fails, use platform-specific force kill (last resort)
+                        quit_commands = ["quit\n", "exit\n", "stop\n", "q\n"]
+                        for cmd in quit_commands:
+                            if time.time() - start_time > timeout_seconds:
+                                break
+                            try:
+                                if self.log_callback:
+                                    self.log_callback(
+                                        f"Sending '{cmd.strip()}' command..."
+                                    )
+                                self.process.stdin.write(cmd)
+                                self.process.stdin.flush()
+
+                                # Wait briefly to see if application responds
+                                try:
+                                    self.process.wait(timeout=1.0)
+                                    if self.log_callback:
+                                        self.log_callback(
+                                            "Application responded to quit command."
+                                        )
+                                    self.running = False
+                                    return True
+                                except subprocess.TimeoutExpired:
+                                    continue  # Try next command
+                            except (BrokenPipeError, OSError):
+                                # stdin closed, application may be shutting down
+                                if self.log_callback:
+                                    self.log_callback(
+                                        "stdin closed during quit command"
+                                    )
+                                break
+                    except Exception as e:
+                        if self.log_callback:
+                            self.log_callback(f"Error sending quit commands: {e}")
+
+                # Step 2: Try SIGTERM (graceful shutdown signal)
+                if time.time() - start_time <= timeout_seconds:
+                    try:
+                        if self.log_callback:
+                            self.log_callback(
+                                "Sending SIGTERM signal for graceful shutdown..."
+                            )
+                        self.process.terminate()  # Sends SIGTERM
+
+                        # Wait for graceful shutdown
+                        self.process.wait(timeout=3.0)
+                        if self.log_callback:
+                            self.log_callback(
+                                "Process terminated gracefully via SIGTERM."
+                            )
+                        self.running = False
+                        return True
+
+                    except subprocess.TimeoutExpired:
+                        if self.log_callback:
+                            self.log_callback("SIGTERM timeout, trying SIGKILL...")
+                    except Exception as e:
+                        if self.log_callback:
+                            self.log_callback(f"SIGTERM failed: {e}")
+
+                # Step 3: Force kill only as last resort
+                if time.time() - start_time <= timeout_seconds:
+                    try:
+                        if self.log_callback:
+                            self.log_callback(
+                                "Graceful shutdown failed, force killing..."
+                            )
+
+                        # On Windows, kill the entire process tree to ensure cleanup
+                        if sys.platform.startswith("win"):
+                            try:
+                                # Use taskkill to kill the process tree
+                                subprocess.run(
+                                    f"taskkill /F /T /PID {pid}",
+                                    shell=True,
+                                    stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL,
+                                    timeout=2.0,
+                                    check=False,
+                                )
+                                if self.log_callback:
+                                    self.log_callback(
+                                        "Process tree terminated via taskkill."
+                                    )
+                            except Exception as e:
+                                if self.log_callback:
+                                    self.log_callback(
+                                        f"taskkill failed: {e}, trying process.kill..."
+                                    )
+                                # Fallback to process.kill
+                                self.process.kill()
+                                self.process.wait(timeout=1.0)
+                        else:
+                            # On Unix, kill the process group
+                            try:
+                                import os
+                                import signal
+
+                                os.killpg(os.getpgid(pid), signal.SIGKILL)
+                                if self.log_callback:
+                                    self.log_callback("Process group killed.")
+                            except Exception as e:
+                                if self.log_callback:
+                                    self.log_callback(
+                                        f"killpg failed: {e}, trying process.kill..."
+                                    )
+                                # Fallback to process.kill
+                                self.process.kill()
+                                self.process.wait(timeout=1.0)
+
+                        if self.log_callback:
+                            self.log_callback("Process force killed.")
+                    except Exception as e:
+                        if self.log_callback:
+                            self.log_callback(f"Force kill failed: {e}")
+
+                        # Step 4: System-level kill as absolute last resort
                         if sys.platform.startswith("win"):
                             try:
                                 subprocess.run(
-                                    f"taskkill /F /PID {pid}",
+                                    f"taskkill /F /T /PID {pid}",
                                     shell=True,
                                     stdout=subprocess.DEVNULL,
                                     stderr=subprocess.DEVNULL,
-                                    timeout=1,  # Add timeout to prevent hanging
+                                    timeout=1.0,
+                                    check=False,
                                 )
-                                termination_successful = True
-                            except Exception:
-                                pass
+                                if self.log_callback:
+                                    self.log_callback("System taskkill completed.")
+                            except Exception as e:
+                                if self.log_callback:
+                                    self.log_callback(f"System taskkill failed: {e}")
 
-                # Close pipes regardless of termination success
+                # Close pipes
                 try:
+                    if hasattr(self.process, "stdin") and self.process.stdin:
+                        self.process.stdin.close()
                     if hasattr(self.process, "stdout") and self.process.stdout:
                         self.process.stdout.close()
-                except Exception:
-                    pass
-
-                try:
                     if hasattr(self.process, "stderr") and self.process.stderr:
                         self.process.stderr.close()
-                except Exception:
-                    pass
+                except Exception as e:
+                    if self.log_callback:
+                        self.log_callback(f"Error closing pipes: {e}")
 
-                # Use a timeout for process cleanup to prevent hanging - reduce timeout
-                cleanup_thread = threading.Thread(
-                    target=self._cleanup_java_processes_with_timeout,
-                    args=(pid, 3),  # Reduced from 5 to 3 seconds
-                )
-                cleanup_thread.daemon = True
-                cleanup_thread.start()
-
-                # Give a shorter time for cleanup to run, but don't wait for completion
-                cleanup_thread.join(timeout=0.2)  # Reduced from 0.5 to 0.2 seconds
-
-            # Mark as not running regardless of termination success
+            # Mark as not running
             self.running = False
 
-            # Quick release of resources - don't wait for long operations
-            try:
-                # Force JVM garbage collection (quick operation)
-                if sys.platform.startswith("win"):
-                    subprocess.run(
-                        "jcmd %* GC.run",
-                        shell=True,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        timeout=0.5,  # Reduced from 1 to 0.5 seconds
-                    )
-            except Exception:
-                pass
-
-            if self.log_callback is not None:
-                self.log_callback("Terminal stopped.")
-
+            if self.log_callback:
+                elapsed = time.time() - start_time
+                self.log_callback(f"Terminal shutdown completed in {elapsed:.2f}s.")
             return True
+
         except Exception as e:
-            # Mark as not running even if there was an error
+            if self.log_callback:
+                elapsed = time.time() - start_time
+                self.log_callback(f"Error in stop_terminal after {elapsed:.2f}s: {e}")
+            # Ensure running is False even if there was an error
             self.running = False
-
-            if self.log_callback is not None:
-                self.log_callback(f"Error stopping terminal: {e}")
             return False
-
-    def _cleanup_java_processes_with_timeout(self, parent_pid, timeout):
-        """Run process cleanup with a timeout to prevent hanging"""
-        try:
-            self._cleanup_java_processes(parent_pid)
-        except Exception:
-            pass
-
-    def _cleanup_java_processes(self, parent_pid=None):
-        """Clean up any Java processes that might be holding onto our JAR file"""
-        # Windows-specific cleanup
-        if sys.platform.startswith("win"):
-            try:
-                # Find Java processes related to our application
-                if parent_pid:
-                    # Try to find child processes by parent PID first (more targeted)
-                    cmd = f'wmic process where (ParentProcessId={parent_pid} and Name like "%java%") get ProcessId'
-                    result = subprocess.run(
-                        cmd,
-                        shell=True,
-                        capture_output=True,
-                        text=True,
-                        timeout=1,  # Reduced from 2 to 1 second
-                    )
-
-                    if result.stdout and "ProcessId" in result.stdout:
-                        # Parse process IDs
-                        lines = result.stdout.strip().split("\n")
-                        # Skip header line
-                        for line in lines[1:]:
-                            if line.strip():
-                                try:
-                                    pid = int(line.strip())
-                                    # Force terminate the process
-                                    subprocess.run(
-                                        f"taskkill /F /PID {pid}",
-                                        shell=True,
-                                        stdout=subprocess.DEVNULL,
-                                        stderr=subprocess.DEVNULL,
-                                        timeout=0.5,  # Reduced from 1 to 0.5 seconds
-                                    )
-                                    if self.log_callback is not None:
-                                        self.log_callback(
-                                            f"Terminated Java child process with PID: {pid}"
-                                        )
-                                except (ValueError, subprocess.TimeoutExpired):
-                                    continue
-
-                # Fallback: Look for Java processes using our JAR file
-                jar_name = os.path.basename(self.jar_file)
-                cmd = f'wmic process where Name like "%java%" get CommandLine,ProcessId'
-                result = subprocess.run(
-                    cmd,
-                    shell=True,
-                    capture_output=True,
-                    text=True,
-                    timeout=1,  # Reduced from 2 to 1 second
-                )
-
-                if result.stdout:
-                    lines = result.stdout.strip().split("\n")
-                    # Skip header line
-                    for line in lines[1:]:
-                        if jar_name in line:
-                            # Extract process ID
-                            parts = line.strip().split()
-                            for i, part in enumerate(parts):
-                                if (
-                                    part.isdigit() and i > 0
-                                ):  # Avoid first column which might be numeric command
-                                    try:
-                                        pid = int(part)
-                                        # Force terminate the process
-                                        subprocess.run(
-                                            f"taskkill /F /PID {pid}",
-                                            shell=True,
-                                            stdout=subprocess.DEVNULL,
-                                            stderr=subprocess.DEVNULL,
-                                            timeout=0.5,  # Reduced from 1 to 0.5 seconds
-                                        )
-                                        if self.log_callback is not None:
-                                            self.log_callback(
-                                                f"Terminated Java process with PID: {pid}"
-                                            )
-                                    except (ValueError, subprocess.TimeoutExpired):
-                                        continue
-            except Exception as e:
-                # Log but don't fail - this is a best-effort cleanup
-                if self.log_callback is not None:
-                    self.log_callback(f"Error in Java process cleanup: {e}")
-
-        # Unix-like systems (Linux, macOS)
-        elif sys.platform.startswith(("linux", "darwin")):
-            try:
-                # Find Java processes that might be using our JAR file
-                jar_name = os.path.basename(self.jar_file)
-                cmd = f"ps -ef | grep java | grep {jar_name} | grep -v grep | awk '{{print $2}}'"
-                result = subprocess.run(
-                    cmd,
-                    shell=True,
-                    capture_output=True,
-                    text=True,
-                    timeout=1,  # Reduced from 2 to 1 second
-                )
-
-                if result.stdout:
-                    pids = result.stdout.strip().split("\n")
-                    for pid in pids:
-                        if pid.strip():
-                            try:
-                                # Force terminate the process
-                                subprocess.run(
-                                    f"kill -9 {pid}",
-                                    shell=True,
-                                    stdout=subprocess.DEVNULL,
-                                    stderr=subprocess.DEVNULL,
-                                    timeout=0.5,  # Reduced from 1 to 0.5 seconds
-                                )
-                                if self.log_callback is not None:
-                                    self.log_callback(
-                                        f"Terminated Java process with PID: {pid}"
-                                    )
-                            except (Exception, subprocess.TimeoutExpired):
-                                continue
-            except Exception as e:
-                # Log but don't fail - this is a best-effort cleanup
-                if self.log_callback is not None:
-                    self.log_callback(f"Error in Java process cleanup: {e}")
 
     def is_running(self):
         """Check if the terminal is currently running"""
@@ -541,6 +523,10 @@ class TerminalManager:
     def set_download_complete_callback(self, callback):
         """Set callback function to be called when download completes"""
         self.download_complete_callback = callback
+
+    def set_auto_start_complete_callback(self, callback):
+        """Set callback function to be called when auto-start completes"""
+        self.auto_start_complete_callback = callback
 
     def _read_output(self):
         """Read output from the process and send to callback"""

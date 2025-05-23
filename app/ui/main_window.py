@@ -186,6 +186,9 @@ class MainWindow:
         self.terminal_manager.set_log_callback(self._append_log)
         self.terminal_manager.set_download_progress_callback(self._update_progress)
         self.terminal_manager.set_download_complete_callback(self._download_complete)
+        self.terminal_manager.set_auto_start_complete_callback(
+            self._auto_start_complete
+        )
 
         # Initialize UI state
         self._update_ui_state()
@@ -461,18 +464,32 @@ class MainWindow:
         # Force UI update
         self.root.update_idletasks()
 
+        # Set up a timeout to force UI update even if stop operation hangs
+        timeout_timer = threading.Timer(5.0, self._force_stop_complete)
+        timeout_timer.daemon = True
+        timeout_timer.start()
+
         # Run stop operation in background thread to avoid blocking UI
         def stop_in_background():
             try:
                 success = self.terminal_manager.stop_terminal()
+                # Cancel the timeout timer since we completed normally
+                timeout_timer.cancel()
                 # Schedule UI update on main thread
                 self.root.after(0, lambda: self._on_stop_complete(success))
             except Exception as e:
+                # Cancel the timeout timer
+                timeout_timer.cancel()
                 # Schedule error handling on main thread
                 self.root.after(0, lambda: self._on_stop_error(str(e)))
 
         stop_thread = threading.Thread(target=stop_in_background, daemon=True)
         stop_thread.start()
+
+    def _force_stop_complete(self):
+        """Force complete the stop operation if it takes too long"""
+        self._append_log("Stop operation timed out - forcing completion...")
+        self.root.after(0, lambda: self._on_stop_complete(False))
 
     def _on_stop_complete(self, success):
         """Handle stop operation completion on main UI thread"""
@@ -568,3 +585,16 @@ class MainWindow:
     def _open_server_settings(self):
         """Open the server settings dialog"""
         ServerSettingsDialog(self.root, self.terminal_manager)
+
+    def _auto_start_complete(self, success):
+        """Handle the auto-start completion"""
+
+        # Schedule UI update on the main thread
+        def update_ui():
+            if success:
+                self._append_log("Auto-start completed successfully.")
+            else:
+                self._append_log("Auto-start failed.")
+            self._update_ui_state()
+
+        self.root.after(0, update_ui)
