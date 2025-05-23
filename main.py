@@ -2,13 +2,21 @@ import tkinter as tk
 from tkinter import messagebox
 import time
 import sys
+import os
 from app.terminal_manager import TerminalManager
 from app.ui.main_window import MainWindow
+from app.ui import set_window_icon
 
 
 def main():
     root = tk.Tk()
     root.title("Theta Terminal Manager")
+
+    # Set the window icon
+    if set_window_icon(root):
+        print("Window icon set successfully")
+    else:
+        print("Could not set window icon")
 
     # Create the terminal manager
     terminal_manager = TerminalManager()

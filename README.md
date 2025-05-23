@@ -136,4 +136,17 @@ If you see warnings about `VIRTUAL_ENV` not matching or if you have an old pipen
 If the build fails:
 1. Ensure all dependencies are installed: `uv sync`
 2. Check that Python 3.12+ is available
-3. Verify Java Runtime Environment is installed for ThetaTerminal.jar 
+3. Verify Java Runtime Environment is installed for ThetaTerminal.jar
+
+### Icon Issues
+
+If the executable doesn't show the custom icon:
+
+1. **Verify icon is included**: The build script will show "Using icon: --icon=app\resources\icon.ico" if found
+2. **Refresh Windows icon cache**: Run `refresh_icon.bat` to clear and refresh the icon cache
+3. **Check icon format**: Ensure the icon.ico file is a valid Windows icon format
+4. **Alternative icons**: The build script will try these files in order:
+   - `app/resources/icon.ico`
+   - `app/resources/icon_32x32.ico` 
+   - `app/resources/icon_128x128.ico`
+5. **Manual verification**: Right-click the executable → Properties to see if the icon appears there 

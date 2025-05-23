@@ -28,15 +28,27 @@ def build_executable():
     is_windows = sys.platform.startswith("win")
 
     # Check for icon file
-    icon_path = os.path.join(icon_dir, "icon.ico")
-    if not os.path.exists(icon_path):
-        print(f"Icon file not found at {icon_path}")
-        print(
-            "The executable will use the default Python icon. To add a custom icon, place icon.ico in app/resources/"
-        )
-        icon_param = ""
+    icon_paths = [
+        os.path.join(icon_dir, "icon.ico"),
+        os.path.join(icon_dir, "icon_32x32.ico"),
+        os.path.join(icon_dir, "icon_128x128.ico"),
+    ]
+
+    icon_param = ""
+    for icon_path in icon_paths:
+        if os.path.exists(icon_path):
+            print(f"Found icon file: {icon_path} ({os.path.getsize(icon_path)} bytes)")
+            icon_param = f"--icon={icon_path}"
+            break
+
+    if not icon_param:
+        print(f"No icon file found. Searched in:")
+        for path in icon_paths:
+            print(f"  - {path}")
+        print("The executable will use the default Python icon.")
+        print("To add a custom icon, place icon.ico in app/resources/")
     else:
-        icon_param = f"--icon={icon_path}"
+        print(f"Using icon: {icon_param}")
 
     # Data separator for PyInstaller is different on Windows vs. other platforms
     separator = ";" if is_windows else ":"
@@ -52,6 +64,11 @@ def build_executable():
         f"--add-data=README.md{separator}.",
     ]
 
+    # Add icon resources as data files so they're available to the running app
+    if os.path.exists(icon_dir):
+        cmd.append(f"--add-data={icon_dir}{separator}app/resources")
+        print(f"Adding icon resources from {icon_dir}")
+
     # Add icon if available
     if icon_param:
         cmd.append(icon_param)
@@ -66,23 +83,34 @@ def build_executable():
     if result.returncode != 0:
         print("Error building executable:")
         print(result.stderr)
-
-        # Try with spec file if direct command fails
-        print("Attempting to build with spec file...")
-        if os.path.exists("ThetaTerminalManager.spec"):
-            spec_result = subprocess.run(
-                ["uv", "run", "pyinstaller", "ThetaTerminalManager.spec"],
-                capture_output=True,
-                text=True,
-            )
-            if spec_result.returncode != 0:
-                print("Error building with spec file:")
-                print(spec_result.stderr)
-                return False
+        if "icon" in result.stderr.lower():
+            print("\nIcon-related error detected. Trying without icon...")
+            # Remove icon parameter and try again
+            cmd_no_icon = [c for c in cmd if not c.startswith("--icon")]
+            result = subprocess.run(cmd_no_icon, capture_output=True, text=True)
+            if result.returncode == 0:
+                print("Build successful without icon!")
             else:
-                print("Build with spec file completed successfully!")
+                print("Build failed even without icon:")
+                print(result.stderr)
+                return False
         else:
-            return False
+            # Try with spec file if direct command fails
+            print("Attempting to build with spec file...")
+            if os.path.exists("ThetaTerminalManager.spec"):
+                spec_result = subprocess.run(
+                    ["uv", "run", "pyinstaller", "ThetaTerminalManager.spec"],
+                    capture_output=True,
+                    text=True,
+                )
+                if spec_result.returncode != 0:
+                    print("Error building with spec file:")
+                    print(spec_result.stderr)
+                    return False
+                else:
+                    print("Build with spec file completed successfully!")
+            else:
+                return False
 
     # Check if executable was created
     exe_path = os.path.join(
