@@ -43,6 +43,8 @@ def build_executable():
 
     # Build the PyInstaller command
     cmd = [
+        "uv",
+        "run",
         "pyinstaller",
         "--name=ThetaTerminalManager",
         "--onefile",
@@ -69,7 +71,7 @@ def build_executable():
         print("Attempting to build with spec file...")
         if os.path.exists("ThetaTerminalManager.spec"):
             spec_result = subprocess.run(
-                ["pyinstaller", "ThetaTerminalManager.spec"],
+                ["uv", "run", "pyinstaller", "ThetaTerminalManager.spec"],
                 capture_output=True,
                 text=True,
             )
