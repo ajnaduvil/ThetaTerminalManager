@@ -8,6 +8,9 @@ dist/
 build/
 *.egg-info/
 
+# PyInstaller
+*.spec
+
 # Virtual environments
 venv/
 env/
