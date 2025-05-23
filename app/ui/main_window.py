@@ -446,9 +446,50 @@ class MainWindow:
 
     def _stop_terminal(self):
         """Stop the terminal if it's running"""
-        success = self.terminal_manager.stop_terminal()
+        if not self.terminal_manager.is_running():
+            return
+
+        # Immediately update UI to show stopping state
+        self.stop_btn.config(state=tk.DISABLED, text="■ Stopping...")
+        self.start_btn.config(state=tk.DISABLED)
+        self._append_log("Stopping terminal...")
+
+        # Force UI update
+        self.root.update_idletasks()
+
+        # Run stop operation in background thread to avoid blocking UI
+        def stop_in_background():
+            try:
+                success = self.terminal_manager.stop_terminal()
+                # Schedule UI update on main thread
+                self.root.after(0, lambda: self._on_stop_complete(success))
+            except Exception as e:
+                # Schedule error handling on main thread
+                self.root.after(0, lambda: self._on_stop_error(str(e)))
+
+        stop_thread = threading.Thread(target=stop_in_background, daemon=True)
+        stop_thread.start()
+
+    def _on_stop_complete(self, success):
+        """Handle stop operation completion on main UI thread"""
         if success:
-            self._update_ui_state()
+            self._append_log("Terminal stopped successfully.")
+        else:
+            self._append_log(
+                "Warning: Terminal stop operation may not have completed successfully."
+            )
+
+        # Reset button states
+        self.stop_btn.config(text="■ Stop")
+        self._update_ui_state()
+
+    def _on_stop_error(self, error_msg):
+        """Handle stop operation error on main UI thread"""
+        self._append_log(f"Error stopping terminal: {error_msg}")
+
+        # Reset button states
+        self.stop_btn.config(text="■ Stop")
+        self._update_ui_state()
 
     def _update_ui_state(self):
         """Update UI elements based on the terminal state"""

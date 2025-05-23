@@ -69,8 +69,73 @@ class TerminalManager:
 
     def cleanup(self):
         """Clean up resources when the application exits"""
-        if self.running:
-            self.stop_terminal()
+        try:
+            # Temporarily save and clear the log_callback to prevent errors during cleanup
+            temp_callback = self.log_callback
+            self.log_callback = None
+
+            if self.running:
+                # Perform the actual cleanup with a simple direct approach to avoid hanging
+                if self.process:
+                    try:
+                        # Quick force kill rather than graceful termination
+                        self.process.kill()
+                    except Exception:
+                        pass
+
+                    # Close pipes regardless of termination success
+                    try:
+                        if hasattr(self.process, "stdout") and self.process.stdout:
+                            self.process.stdout.close()
+                    except Exception:
+                        pass
+
+                    try:
+                        if hasattr(self.process, "stderr") and self.process.stderr:
+                            self.process.stderr.close()
+                    except Exception:
+                        pass
+
+                self.running = False
+
+            # Run cleanup in a separate thread with timeout to prevent hanging the application exit
+            cleanup_thread = threading.Thread(target=self._final_cleanup)
+            cleanup_thread.daemon = True
+            cleanup_thread.start()
+
+            # Only wait a very short time for cleanup to avoid blocking application exit
+            cleanup_thread.join(timeout=0.1)  # Reduced from 0.2 to 0.1 seconds
+
+            # Restore the callback
+            self.log_callback = temp_callback
+
+        except Exception:
+            # Ensure we don't propagate exceptions during cleanup
+            pass
+
+    def _final_cleanup(self):
+        """Final cleanup operations run in a separate thread"""
+        try:
+            # Check for any lingering Java processes
+            self._cleanup_java_processes()
+
+            # Force terminate any JVM instances
+            if sys.platform.startswith("win"):
+                try:
+                    # Force terminate any Java processes that might be running with our JAR file
+                    jar_name = os.path.basename(self.jar_file)
+                    subprocess.run(
+                        f'taskkill /F /IM java.exe /FI "WINDOWTITLE eq *{jar_name}*"',
+                        shell=True,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        timeout=1,
+                    )
+                except Exception:
+                    pass
+        except Exception:
+            # Ignore any errors in final cleanup
+            pass
 
     def load_config(self):
         """Load username and password from config file if it exists"""
@@ -234,22 +299,228 @@ class TerminalManager:
             return False
 
         try:
+            # Set a flag to track successful termination
+            termination_successful = False
+
             # Terminate the process
             if self.process:
-                self.process.terminate()
-                try:
-                    self.process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    self.process.kill()
+                # Store the process ID before termination
+                pid = self.process.pid
 
+                # First attempt a graceful termination
+                try:
+                    self.process.terminate()
+
+                    # Wait for process to terminate with a shorter timeout for better responsiveness
+                    self.process.wait(timeout=2)  # Reduced from 3 to 2 seconds
+                    termination_successful = True
+                except (subprocess.TimeoutExpired, Exception) as e:
+                    # If process doesn't terminate in time or there's an error, force kill it
+                    if self.log_callback is not None:
+                        self.log_callback(
+                            "Process not responding - forcing termination..."
+                        )
+
+                    try:
+                        self.process.kill()
+                        # Wait again to ensure it's terminated with a shorter timeout
+                        self.process.wait(timeout=0.5)  # Reduced from 1 to 0.5 seconds
+                        termination_successful = True
+                    except Exception:
+                        # If kill also fails, use platform-specific force kill (last resort)
+                        if sys.platform.startswith("win"):
+                            try:
+                                subprocess.run(
+                                    f"taskkill /F /PID {pid}",
+                                    shell=True,
+                                    stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL,
+                                    timeout=1,  # Add timeout to prevent hanging
+                                )
+                                termination_successful = True
+                            except Exception:
+                                pass
+
+                # Close pipes regardless of termination success
+                try:
+                    if hasattr(self.process, "stdout") and self.process.stdout:
+                        self.process.stdout.close()
+                except Exception:
+                    pass
+
+                try:
+                    if hasattr(self.process, "stderr") and self.process.stderr:
+                        self.process.stderr.close()
+                except Exception:
+                    pass
+
+                # Use a timeout for process cleanup to prevent hanging - reduce timeout
+                cleanup_thread = threading.Thread(
+                    target=self._cleanup_java_processes_with_timeout,
+                    args=(pid, 3),  # Reduced from 5 to 3 seconds
+                )
+                cleanup_thread.daemon = True
+                cleanup_thread.start()
+
+                # Give a shorter time for cleanup to run, but don't wait for completion
+                cleanup_thread.join(timeout=0.2)  # Reduced from 0.5 to 0.2 seconds
+
+            # Mark as not running regardless of termination success
             self.running = False
-            if self.log_callback:
+
+            # Quick release of resources - don't wait for long operations
+            try:
+                # Force JVM garbage collection (quick operation)
+                if sys.platform.startswith("win"):
+                    subprocess.run(
+                        "jcmd %* GC.run",
+                        shell=True,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        timeout=0.5,  # Reduced from 1 to 0.5 seconds
+                    )
+            except Exception:
+                pass
+
+            if self.log_callback is not None:
                 self.log_callback("Terminal stopped.")
+
             return True
         except Exception as e:
-            if self.log_callback:
+            # Mark as not running even if there was an error
+            self.running = False
+
+            if self.log_callback is not None:
                 self.log_callback(f"Error stopping terminal: {e}")
             return False
+
+    def _cleanup_java_processes_with_timeout(self, parent_pid, timeout):
+        """Run process cleanup with a timeout to prevent hanging"""
+        try:
+            self._cleanup_java_processes(parent_pid)
+        except Exception:
+            pass
+
+    def _cleanup_java_processes(self, parent_pid=None):
+        """Clean up any Java processes that might be holding onto our JAR file"""
+        # Windows-specific cleanup
+        if sys.platform.startswith("win"):
+            try:
+                # Find Java processes related to our application
+                if parent_pid:
+                    # Try to find child processes by parent PID first (more targeted)
+                    cmd = f'wmic process where (ParentProcessId={parent_pid} and Name like "%java%") get ProcessId'
+                    result = subprocess.run(
+                        cmd,
+                        shell=True,
+                        capture_output=True,
+                        text=True,
+                        timeout=1,  # Reduced from 2 to 1 second
+                    )
+
+                    if result.stdout and "ProcessId" in result.stdout:
+                        # Parse process IDs
+                        lines = result.stdout.strip().split("\n")
+                        # Skip header line
+                        for line in lines[1:]:
+                            if line.strip():
+                                try:
+                                    pid = int(line.strip())
+                                    # Force terminate the process
+                                    subprocess.run(
+                                        f"taskkill /F /PID {pid}",
+                                        shell=True,
+                                        stdout=subprocess.DEVNULL,
+                                        stderr=subprocess.DEVNULL,
+                                        timeout=0.5,  # Reduced from 1 to 0.5 seconds
+                                    )
+                                    if self.log_callback is not None:
+                                        self.log_callback(
+                                            f"Terminated Java child process with PID: {pid}"
+                                        )
+                                except (ValueError, subprocess.TimeoutExpired):
+                                    continue
+
+                # Fallback: Look for Java processes using our JAR file
+                jar_name = os.path.basename(self.jar_file)
+                cmd = f'wmic process where Name like "%java%" get CommandLine,ProcessId'
+                result = subprocess.run(
+                    cmd,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=1,  # Reduced from 2 to 1 second
+                )
+
+                if result.stdout:
+                    lines = result.stdout.strip().split("\n")
+                    # Skip header line
+                    for line in lines[1:]:
+                        if jar_name in line:
+                            # Extract process ID
+                            parts = line.strip().split()
+                            for i, part in enumerate(parts):
+                                if (
+                                    part.isdigit() and i > 0
+                                ):  # Avoid first column which might be numeric command
+                                    try:
+                                        pid = int(part)
+                                        # Force terminate the process
+                                        subprocess.run(
+                                            f"taskkill /F /PID {pid}",
+                                            shell=True,
+                                            stdout=subprocess.DEVNULL,
+                                            stderr=subprocess.DEVNULL,
+                                            timeout=0.5,  # Reduced from 1 to 0.5 seconds
+                                        )
+                                        if self.log_callback is not None:
+                                            self.log_callback(
+                                                f"Terminated Java process with PID: {pid}"
+                                            )
+                                    except (ValueError, subprocess.TimeoutExpired):
+                                        continue
+            except Exception as e:
+                # Log but don't fail - this is a best-effort cleanup
+                if self.log_callback is not None:
+                    self.log_callback(f"Error in Java process cleanup: {e}")
+
+        # Unix-like systems (Linux, macOS)
+        elif sys.platform.startswith(("linux", "darwin")):
+            try:
+                # Find Java processes that might be using our JAR file
+                jar_name = os.path.basename(self.jar_file)
+                cmd = f"ps -ef | grep java | grep {jar_name} | grep -v grep | awk '{{print $2}}'"
+                result = subprocess.run(
+                    cmd,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=1,  # Reduced from 2 to 1 second
+                )
+
+                if result.stdout:
+                    pids = result.stdout.strip().split("\n")
+                    for pid in pids:
+                        if pid.strip():
+                            try:
+                                # Force terminate the process
+                                subprocess.run(
+                                    f"kill -9 {pid}",
+                                    shell=True,
+                                    stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL,
+                                    timeout=0.5,  # Reduced from 1 to 0.5 seconds
+                                )
+                                if self.log_callback is not None:
+                                    self.log_callback(
+                                        f"Terminated Java process with PID: {pid}"
+                                    )
+                            except (Exception, subprocess.TimeoutExpired):
+                                continue
+            except Exception as e:
+                # Log but don't fail - this is a best-effort cleanup
+                if self.log_callback is not None:
+                    self.log_callback(f"Error in Java process cleanup: {e}")
 
     def is_running(self):
         """Check if the terminal is currently running"""
