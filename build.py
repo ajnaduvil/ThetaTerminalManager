@@ -3,11 +3,16 @@ import subprocess
 import shutil
 import sys
 import platform
+from version_info import write_version_file, get_version_string
 
 
 def build_executable():
     """Build the executable using PyInstaller"""
     print("Building ThetaData Terminal Manager executable...")
+
+    # Get version information
+    version = get_version_string()
+    print(f"Version: {version}")
 
     # Clean up previous build artifacts if they exist
     if os.path.exists("dist"):
@@ -18,6 +23,10 @@ def build_executable():
     for file in os.listdir("."):
         if file.endswith(".spec"):
             os.remove(file)
+
+    # Generate version file for PyInstaller
+    version_file = write_version_file("version_info.txt")
+    print(f"Generated version file: {version_file}")
 
     # Create directory for icon if it doesn't exist
     icon_dir = os.path.join("app", "resources")
@@ -62,6 +71,7 @@ def build_executable():
         "--onefile",
         "--windowed",
         f"--add-data=README.md{separator}.",
+        f"--version-file={version_file}",  # Add version file
     ]
 
     # Add icon resources as data files so they're available to the running app
@@ -120,9 +130,15 @@ def build_executable():
     if os.path.exists(exe_path):
         print("Build completed successfully!")
         print(f"Executable created at: {os.path.abspath(exe_path)}")
+        print(f"Version: {version}")
 
         # Copy README to dist folder
         shutil.copy("README.md", os.path.join("dist", "README.md"))
+
+        # Clean up version file
+        if os.path.exists(version_file):
+            os.remove(version_file)
+            print("Cleaned up temporary version file")
 
         return True
     else:

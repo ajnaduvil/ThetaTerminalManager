@@ -78,6 +78,24 @@ To work on the project:
    uv add --dev package-name
    ```
 
+## Version Management
+
+To update the version number:
+
+```bash
+# Update to version 1.0.1
+uv run python update_version.py 1 0 1
+
+# Update to version 1.2.0 build 5
+uv run python update_version.py 1 2 0 5
+```
+
+This will automatically update:
+- `version_info.py` - Version metadata for the executable
+- `pyproject.toml` - Package version
+
+The version information will be embedded in the built executable and visible in Windows Properties.
+
 ## Building Executable
 
 To build a standalone executable:
@@ -120,6 +138,10 @@ uv run pyinstaller --name=ThetaDataTerminalManager --onefile --windowed main.py
 ## License
 
 MIT
+
+## Author
+
+Created by [ajnaduvil](https://github.com/ajnaduvil)
 
 ## Troubleshooting
 

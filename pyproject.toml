@@ -4,10 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "thetadata-terminal-manager"
-version = "1.0.0"
-description = "A Python application for managing ThetaTerminal.jar with a simple GUI interface"
+version = "1.0.1.2"
+description = "ThetaData Terminal Manager - GUI for managing ThetaTerminal.jar"
 readme = "README.md"
 license = {text = "MIT"}
+authors = [
+    {name = "ajnaduvil", email = "ajnaduvil@gmail.com"}
+]
 requires-python = ">=3.12"
 dependencies = [
     "pyperclip>=1.8.2",
